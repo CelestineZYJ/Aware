@@ -45,7 +45,41 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 
+    
 
+def url_is_article(url, current_year='2023'):
+    if url:
+        if 'cnn.com/{}/'.format(current_year) in url and '/gallery/' not in url:
+            return True
+    return False
+
+# def parse(html):
+#     ...
+#     author = soup.find('span', {'class': 'byline__name'})
+#     if not author:
+#         author = soup.find('span', {'class': 'byline__names'})
+#     author = return_text_if_not_none(author)
+#     return author
+
+
+
+def parse(html):
+    soup = BeautifulSoup(html, features="html.parser")
+    title = return_text_if_not_none(soup.find('h1', {'class': 'headline__text'}))
+    article_content = return_text_if_not_none(soup.find('div', {'class': 'article__content'}))
+    author = soup.find('span', {'class': 'byline__name'})
+    if not author:
+        author = soup.find('span', {'class': 'byline__names'})
+    author = return_text_if_not_none(author)
+    return title, author, article_content
+
+
+def return_text_if_not_none(element):
+    if element:
+        return element.text.strip()
+    else:
+        return ''
+    
 all_urls = []
 url = 'https://www.cnn.com'
 data = requests.get(url).text
@@ -56,15 +90,13 @@ for a in soup.find_all('a', href=True):
     all_urls.append(a['href'])
     
 
-def url_is_article(url, current_year='2023'):
-    if url:
-        if 'cnn.com/{}/'.format(current_year) in url and '/gallery/' not in url:
-            return True
-    return False
-
 article_urls = [url for url in all_urls if url_is_article(url)]
 
 print(len(article_urls))
 
-for article_url in article_urls:
+parse_data_list = []
+for article_url in (article_urls):
     data = requests.get(article_url).text
+    parse_data_list.append(parse(data))
+
+print(len(parse_data_list))
