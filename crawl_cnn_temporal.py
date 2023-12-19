@@ -40,17 +40,22 @@ print(body_elements[1].text)
 '''
 
 
-
+import json
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 
     
+year_range = ['2014','2015','2016','2017','2018','2019','2020','2021','2022','2023']
 
-def url_is_article(url, current_year='2023'):
-    if url:
-        if 'cnn.com/{}/'.format(current_year) in url and '/gallery/' not in url:
-            return True
+def url_is_article(url):
+    for current_year in year_range:
+        # url = 'https://www.cnn.com/2020/10/29/success/talking-politics-in-office/index.html'
+        if url:
+            if 'cnn.com/{}/'.format(current_year) in url and '/gallery/' not in url:
+                return True
+            # elif 'cnn.com/videos/politics/{}/'.format(current_year) in url and '/gallery/' not in url:
+            #     return True
     return False
 
 # def parse(html):
@@ -61,7 +66,19 @@ def url_is_article(url, current_year='2023'):
 #     author = return_text_if_not_none(author)
 #     return author
 
+def parse_timestamp(timestamp):
+    if 'Published' in timestamp:
+        timestamp_type = 'Published'
+    elif 'Updated' in timestamp:
+        timestamp_type = 'Updated'
+    else:
+        timestamp_type = ''
 
+
+    article_time, article_day, article_year = timestamp.replace('Published', '').replace('Updated', '').split(', ')
+    return timestamp_type, article_time.strip(), article_day.strip(), article_year.strip()
+
+mon_dict = {"Janurary":'01','Feburary':'02','March':'03','April':'04','May':'05','June':'06','July':'07','August':'08','September':'09','October':'10','November':'11','December':'12'}
 
 def parse(html):
     soup = BeautifulSoup(html, features="html.parser")
@@ -71,7 +88,21 @@ def parse(html):
     if not author:
         author = soup.find('span', {'class': 'byline__names'})
     author = return_text_if_not_none(author)
-    return title, author, article_content
+    timestamp = return_text_if_not_none(soup.find('div', {'class': 'timestamp'}))
+    if timestamp:
+        timestamp = parse_timestamp(timestamp)
+        year=timestamp[-1]
+        time_split = timestamp[2].split(' ')
+        weekday, mon, day = time_split[0], time_split[1], time_split[2]
+        if len(day) == '1':
+            day='0'+day
+        mon = mon_dict[mon]
+        timestamp=year+mon+day
+    else:
+        timestamp = ['', '', '', '']
+        timestamp = ''
+    
+    return title, author, timestamp, article_content
 
 
 def return_text_if_not_none(element):
@@ -82,6 +113,8 @@ def return_text_if_not_none(element):
     
 all_urls = []
 url = 'https://www.cnn.com'
+# url = 'https://www.cnn.com/us'
+
 data = requests.get(url).text
 soup = BeautifulSoup(data, features="html.parser")
 for a in soup.find_all('a', href=True):
@@ -97,6 +130,16 @@ print(len(article_urls))
 parse_data_list = []
 for article_url in (article_urls):
     data = requests.get(article_url).text
-    parse_data_list.append(parse(data))
+    title, authot, timestamp, article_content = parse(data)
+    each_article_dict = {'timestamp': timestamp, 'title': title, 'article_url':article_url ,'article_content': article_content}
+    parse_data_list.append(each_article_dict)
 
-print(len(parse_data_list))
+print(parse_data_list[0])
+
+tempf = open('recent_cnn_news_temporal.json', 'w')
+tempf.close()
+with open('recent_cnn_news_temporal.json', 'a') as out:
+    for l in parse_data_list:
+        json_str=json.dumps(l)
+        out.write(json_str+"\n")   
+        
