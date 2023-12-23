@@ -39,6 +39,7 @@ print(body_elements[1].text)
 
 '''
 
+# https://www.fieryflamingo.com/scrape-cnn-homepage-python/
 
 import json
 import requests
@@ -94,7 +95,8 @@ def parse(html):
         year=timestamp[-1]
         time_split = timestamp[2].split(' ')
         weekday, mon, day = time_split[0], time_split[1], time_split[2]
-        if len(day) == '1':
+        
+        if len(day) == 1:
             day='0'+day
         mon = mon_dict[mon]
         timestamp=year+mon+day
@@ -104,6 +106,13 @@ def parse(html):
     
     return title, author, timestamp, article_content
 
+def read_json_file_to_dict_list(dict_name):
+    dict_list = []
+    with open(str(dict_name)+'.json', 'r', encoding='utf-8') as dict_file:
+        for line in dict_file.readlines():
+            js = json.loads(line.strip())
+            dict_list.append(js)
+    return dict_list
 
 def return_text_if_not_none(element):
     if element:
@@ -134,12 +143,53 @@ for article_url in (article_urls):
     each_article_dict = {'timestamp': timestamp, 'title': title, 'article_url':article_url ,'article_content': article_content}
     parse_data_list.append(each_article_dict)
 
-print(parse_data_list[0])
+# print(parse_data_list[0])
 
-tempf = open('recent_cnn_news_temporal.json', 'w')
-tempf.close()
-with open('recent_cnn_news_temporal.json', 'a') as out:
+try:
+    tempf = open('recent_cnn_news_temporal_23122023.json', 'w')
+    tempf.close()
+except:
+    pass
+
+with open('recent_cnn_news_temporal_23122023.json', 'a') as out:
     for l in parse_data_list:
         json_str=json.dumps(l)
         out.write(json_str+"\n")   
         
+  
+all_cnn_dict_list = []    
+cnn18122023_dict_list = read_json_file_to_dict_list('recent_cnn_news_temporal_18122023') 
+all_cnn_dict_list += cnn18122023_dict_list
+cnn22122023_dict_list = read_json_file_to_dict_list('recent_cnn_news_temporal_22122023')
+all_cnn_dict_list += cnn22122023_dict_list
+cnn23122023_dict_list = read_json_file_to_dict_list('recent_cnn_news_temporal_23122023')
+all_cnn_dict_list += cnn23122023_dict_list
+
+
+print(len(all_cnn_dict_list))
+del_repeat_cnn_dict_list = []
+cnn_url_list = []
+for each_news_dict in all_cnn_dict_list:
+    if each_news_dict['article_url'] not in cnn_url_list:
+        cnn_url_list.append(each_news_dict['article_url'])
+        del_repeat_cnn_dict_list.append(each_news_dict)
+print(len(del_repeat_cnn_dict_list))
+
+
+def takeTime(e):
+    return  e['timestamp']
+
+del_repeat_cnn_dict_list.sort(key=takeTime)
+
+try:
+    tempf = open('del_repeat_cnn_dict_list.json', 'w')
+    tempf.close()
+except:
+    pass
+
+with open('del_repeat_cnn_dict_list.json', 'a') as out:
+    for l in del_repeat_cnn_dict_list:
+        json_str=json.dumps(l)
+        out.write(json_str+"\n") 
+        
+
