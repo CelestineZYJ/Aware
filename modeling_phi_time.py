@@ -916,6 +916,7 @@ class PhiModel(PhiPreTrainedModel):
                 attention_mask, (batch_size, seq_length), inputs_embeds, past_key_values_length
             )
 
+        # batch_size=1,seq_length=80,dim=2560
         hidden_states = inputs_embeds
 
         # decoder layers
@@ -924,10 +925,14 @@ class PhiModel(PhiPreTrainedModel):
         next_decoder_cache = None
         
         # encode then decode the hidden state to derive the hidden time variable z (true label for z is time_id)
-        time_mu, time_log_var, time_z_feature = self.hidden_time_encoder(hidden_states)
-        hidden_states = self.hidden_time_decoder(time_z_feature)
+        last_token_hidden_state = hidden_states.squeeze(0)[-1].unsqueeze(0)
+        time_mu, time_log_var, time_z_feature = self.hidden_time_encoder(last_token_hidden_state)
+        recon_last_token_hidden_state = self.hidden_time_decoder(time_z_feature)
+        vae_loss = vae_loss_function(recon_last_token_hidden_state, last_token_hidden_state, time_mu, time_log_var)
+        
+        hidden_states[-1] = recon_last_token_hidden_state
 
-        first_decoder_layer = self.layer[0]
+        first_decoder_layer = self.layers[0]
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
 
@@ -1007,6 +1012,37 @@ class PhiModel(PhiPreTrainedModel):
             attentions=all_self_attns,
         )
 
+def vae_loss_function(recon_x, x, mu, logvar):
+    recon_x = recon_x.squeeze()
+    x = x.squeeze()
+    BCE = F.binary_cross_entropy(recon_x, x, size_average=False)
+    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    return BCE + KLD
+
+class VAEBaseModel(nn.Module):
+
+    def __init__(self):
+        super(VAEBaseModel, self).__init__()
+
+    def weight_init(self):
+        for block in self._modules:
+            try:
+                for m in self._modules[block]:
+                    kaiming_init(m)
+            except:
+                kaiming_init(block)
+
+    def reparameterize(self, mu, log_var):
+        
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        return mu + (eps * std)
+
+    
+    @abstractmethod
+    def forward(self, input):
+        pass
+
 
 class Hidden_Time_Encoder(VAEBaseModel):
 
@@ -1025,7 +1061,7 @@ class Hidden_Time_Encoder(VAEBaseModel):
         # layer 4 out: B * 256 
 
         downsample = []
-        in_channels = 20000
+        in_channels = 2560
         for out_channels in self.layer_dims: 
             downsample.append(
                 nn.Sequential(
@@ -1042,7 +1078,7 @@ class Hidden_Time_Encoder(VAEBaseModel):
 
         
     def forward(self, input):
-        B, _, = input.size()
+        B, _ = input.size()
         out = self.downsample(input)
         out = out.view(B, -1)
         out = self.fc_mu_var(out)
@@ -1060,12 +1096,12 @@ class Hidden_Time_Decoder(VAEBaseModel):
     def __init__(self):
         super(Hidden_Time_Decoder, self).__init__()
         in_channels = 64   # original 128 * 8
-        self.init_dim=  1024    # original 8*8*8*64
+        self.init_dim=  64    # original 8*8*8*64
         out_channels = self.init_dim
         z_to_dec = []
         z_to_dec.append(
             nn.Sequential(
-                nn.Linear(in_channels, out_channels), # paper: 2^18, official repot: 2^15
+                nn.Linear(in_channels, out_channels), 
                 nn.BatchNorm1d(out_channels),
                 nn.ReLU()
             )
@@ -1079,7 +1115,7 @@ class Hidden_Time_Decoder(VAEBaseModel):
         # layer4 output: B * 64 * 128 * 128
         # layer5 output: B * 20000 * 256 *  256
         in_channels = out_channels # // (8*8)
-        self.layer_dims = [512, 256, 128, 64, 20000]
+        self.layer_dims = [512, 256, 128, 64, 2560]
         self.dropout = [0,1]
         upsample = []
         for i  in range(len(self.layer_dims)-1):
@@ -1124,31 +1160,6 @@ class Hidden_Time_Decoder(VAEBaseModel):
         out = self.last_layer(out)
         return out
 
-
-
-class VAEBaseModel(nn.Module):
-
-    def __init__(self):
-        super(VAEBaseModel, self).__init__()
-
-    def weight_init(self):
-        for block in self._modules:
-            try:
-                for m in self._modules[block]:
-                    kaiming_init(m)
-            except:
-                kaiming_init(block)
-
-    def reparameterize(self, mu, log_var):
-        
-        std = torch.exp(0.5 * log_var)
-        eps = torch.randn_like(std)
-        return mu + (eps * std)
-
-    
-    @abstractmethod
-    def forward(self, input):
-        pass
 
 
 class PhiForCausalLM(PhiPreTrainedModel):
